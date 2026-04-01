@@ -36,7 +36,7 @@ from .statusbar import print_status_bar
 # ── Session stats tracking ────────────────────────────────────────────────────
 
 class SessionStats:
-    """Mutable stats accumulated across the agent loop."""
+    """Mutable stats accumulated across the agent loop, using real API usage data."""
     def __init__(self, model: str, context_window: int):
         self.model = model
         self.context_window = context_window
@@ -44,6 +44,21 @@ class SessionStats:
         self.api_calls = 0
         self.compact_count = 0
         self.start_time = time.time()
+        # Real token counts from the API (not estimates)
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.last_context_tokens = 0  # prompt_tokens from the most recent API call
+
+    def record_usage(self, usage):
+        """Record token usage from an API response."""
+        if usage:
+            self.total_input_tokens += usage.prompt_tokens or 0
+            self.total_output_tokens += usage.completion_tokens or 0
+            self.last_context_tokens = usage.prompt_tokens or 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.total_input_tokens + self.total_output_tokens
 
     @property
     def elapsed(self) -> float:
@@ -167,6 +182,7 @@ def agent_loop(
                 tool_choice="auto",
             )
             stats.api_calls += 1
+            stats.record_usage(response.usage)
         except Exception as e:
             if spinner:
                 spinner.stop()
@@ -184,6 +200,7 @@ def agent_loop(
                     tool_choice="auto",
                 )
                 stats.api_calls += 1
+                stats.record_usage(response.usage)
             except Exception as e2:
                 if spinner:
                     spinner.stop()
@@ -199,20 +216,14 @@ def agent_loop(
         # Append the assistant message to history
         messages.append(_serialize_message(msg))
 
+        # Show status bar after every API call so user always sees current state
+        if verbose:
+            _show_status(stats)
+
         # ── No tool calls → final answer ──
         if not msg.tool_calls:
             if msg.content:
                 print(msg.content)
-            if verbose:
-                print_status_bar(
-                    model=model,
-                    tokens_used=estimate_tokens(messages),
-                    context_window=context_window,
-                    turns=stats.turns,
-                    api_calls=stats.api_calls,
-                    duration=stats.elapsed,
-                    compact_count=stats.compact_count,
-                )
             return messages
 
         # ── Execute tool calls ──
@@ -267,17 +278,22 @@ def agent_loop(
             })
 
     _log(f"[warn] Reached max turns ({max_turns})")
-    if verbose:
-        print_status_bar(
-            model=model,
-            tokens_used=estimate_tokens(messages),
-            context_window=context_window,
-            turns=stats.turns,
-            api_calls=stats.api_calls,
-            duration=stats.elapsed,
-            compact_count=stats.compact_count,
-        )
     return messages
+
+
+def _show_status(stats: SessionStats):
+    """Render the status bar with real API token counts."""
+    print_status_bar(
+        model=stats.model,
+        context_tokens=stats.last_context_tokens,
+        total_input=stats.total_input_tokens,
+        total_output=stats.total_output_tokens,
+        context_window=stats.context_window,
+        turns=stats.turns,
+        api_calls=stats.api_calls,
+        duration=stats.elapsed,
+        compact_count=stats.compact_count,
+    )
 
 
 def _serialize_message(msg) -> dict:
