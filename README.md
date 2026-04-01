@@ -1,5 +1,7 @@
 # OpenClaude
 
+**Language**: **English** | [中文](README_CN.md)
+
 **Build your own agentic coding assistant using open-source models.**
 
 This project extracts the core architectural patterns from [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's AI coding agent) and re-implements them in ~500 lines of Python, runnable with **any model** that supports tool use — Ollama, vLLM, OpenAI, DeepSeek, Together AI, etc.
@@ -37,7 +39,7 @@ This loop — powered by any capable model — is the core idea behind Claude Co
 ### 1. Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/openclaude-ollama.git
+git clone https://github.com/JFan5/openclaude-ollama.git
 cd openclaude-ollama
 pip install -r requirements.txt
 ```
