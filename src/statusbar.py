@@ -37,10 +37,10 @@ def _usage_color(ratio: float) -> str:
 def _format_tokens(n: int) -> str:
     if n < 1000:
         return str(n)
-    elif n < 100_000:
+    elif n < 1_000_000:
         return f"{n / 1000:.1f}k"
     else:
-        return f"{n / 1000:.0f}k"
+        return f"{n / 1_000_000:.1f}M"
 
 
 def _bar_chart(ratio: float, width: int = 20) -> str:
