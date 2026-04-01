@@ -1,9 +1,10 @@
 """
-Status bar — persistent bottom bar showing session stats.
+Status bar — two-line display showing context window and token usage.
 
-Inspired by Claude Code's StatusLine.tsx and PromptInputFooter.tsx,
-which display model name, token usage, context window, cost, and
-session duration at the bottom of the terminal.
+Inspired by Claude Code's StatusLine.tsx and PromptInputFooter.tsx.
+
+Line 1: Context window — how full is the model's memory (triggers compression)
+Line 2: Token usage   — cumulative input/output tokens consumed this session
 """
 
 import sys
@@ -12,6 +13,7 @@ import shutil
 
 # ANSI escape codes
 RESET = "\033[0m"
+BOLD = "\033[1m"
 BG_BAR = "\033[48;5;236m"  # dark gray background
 FG_WHITE = "\033[38;5;252m"
 FG_GREEN = "\033[38;5;114m"
@@ -20,10 +22,10 @@ FG_RED = "\033[38;5;203m"
 FG_CYAN = "\033[38;5;117m"
 FG_DIM = "\033[38;5;245m"
 FG_BLUE = "\033[38;5;111m"
+FG_MAGENTA = "\033[38;5;176m"
 
 
 def _usage_color(ratio: float) -> str:
-    """Color based on context window usage: green < 50% < yellow < 80% < red."""
     if ratio < 0.5:
         return FG_GREEN
     elif ratio < 0.8:
@@ -33,7 +35,6 @@ def _usage_color(ratio: float) -> str:
 
 
 def _format_tokens(n: int) -> str:
-    """Format token count: 1234 → '1.2k', 56789 → '56.8k', 1000000 → '1000k'."""
     if n < 1000:
         return str(n)
     elif n < 100_000:
@@ -42,8 +43,7 @@ def _format_tokens(n: int) -> str:
         return f"{n / 1000:.0f}k"
 
 
-def _bar_chart(ratio: float, width: int = 12) -> str:
-    """Render a small progress bar: [████░░░░░░░░]"""
+def _bar_chart(ratio: float, width: int = 20) -> str:
     filled = min(int(ratio * width), width)
     empty = width - filled
     color = _usage_color(ratio)
@@ -51,7 +51,6 @@ def _bar_chart(ratio: float, width: int = 12) -> str:
 
 
 def format_duration(seconds: float) -> str:
-    """Format duration: 65 → '1m 5s', 3661 → '1h 1m'."""
     if seconds < 60:
         return f"{int(seconds)}s"
     elif seconds < 3600:
@@ -63,7 +62,7 @@ def format_duration(seconds: float) -> str:
         return f"{h}h {m}m"
 
 
-def render_status_bar(
+def print_status_bar(
     model: str,
     context_tokens: int,
     total_input: int,
@@ -73,47 +72,62 @@ def render_status_bar(
     api_calls: int,
     duration: float,
     compact_count: int = 0,
-) -> str:
+):
     """
-    Render a one-line status bar showing real API token usage.
+    Print a two-line status bar to stderr.
 
-    Example:
-      minimax-m2.5:cloud │ context: 2.4k / 1000k [░░░░░░░░░░░░] 0% │ used: ↑3.1k ↓820 │ turns: 3 │ 5s
+    Line 1 — Context Window (how full is the model's "memory"):
+      ┃ Context   1.1k / 1000k [░░░░░░░░░░░░░░░░░░░░] 0%
+
+    Line 2 — Token Usage (cumulative cost tracking):
+      ┃ Tokens    ↑input: 2.2k  ↓output: 123  │ model: minimax  │ turns: 2 │ 1s
     """
+    cols = shutil.get_terminal_size().columns
     ratio = context_tokens / context_window if context_window > 0 else 0
     pct = min(int(ratio * 100), 100)
     color = _usage_color(ratio)
 
-    # Segments
-    model_seg = f"{FG_CYAN}{model}{RESET}"
+    # ── Line 1: Context Window ──
+    bar_width = min(20, cols - 50)
+    if bar_width < 5:
+        bar_width = 5
+    bar = _bar_chart(ratio, width=bar_width)
 
-    # Context usage: current prompt tokens vs context window
-    ctx_seg = (
-        f"context: {color}{_format_tokens(context_tokens)}{FG_DIM} / "
-        f"{_format_tokens(context_window)} "
-        f"{_bar_chart(ratio, width=12)} {color}{pct}%{RESET}"
-    )
-
-    # Cumulative usage: total input ↑ and output ↓
-    used_seg = (
-        f"used: {FG_BLUE}↑{_format_tokens(total_input)}{RESET} "
-        f"{FG_GREEN}↓{_format_tokens(total_output)}{RESET}"
-    )
-
-    turns_seg = f"turns: {FG_WHITE}{turns}{RESET}"
-    time_seg = f"{FG_DIM}{format_duration(duration)}{RESET}"
-
-    segments = [model_seg, ctx_seg, used_seg, turns_seg]
+    compact_note = ""
     if compact_count > 0:
-        segments.append(f"compacted: {FG_YELLOW}{compact_count}x{RESET}")
-    segments.append(time_seg)
+        compact_note = f"  {FG_YELLOW}⟳ compressed {compact_count}x{RESET}"
 
-    bar_content = f" {FG_DIM}│{RESET} ".join(segments)
-    return f"{BG_BAR} {bar_content} {RESET}"
+    line1 = (
+        f"{BG_BAR} {FG_DIM}┃{RESET}{BG_BAR} "
+        f"{FG_DIM}Context   "
+        f"{color}{BOLD}{_format_tokens(context_tokens)}{RESET}{BG_BAR}"
+        f"{FG_DIM} / {_format_tokens(context_window)}{RESET}{BG_BAR} "
+        f"{bar}"
+        f" {color}{pct}%{RESET}{BG_BAR}"
+        f"{compact_note}"
+        f" {RESET}"
+    )
 
+    # ── Line 2: Token Usage ──
+    total = total_input + total_output
 
-def print_status_bar(**kwargs):
-    """Print the status bar to stderr."""
-    bar = render_status_bar(**kwargs)
-    sys.stderr.write(f"{bar}\n")
+    line2 = (
+        f"{BG_BAR} {FG_DIM}┃{RESET}{BG_BAR} "
+        f"{FG_DIM}Tokens    "
+        f"{FG_BLUE}↑in: {BOLD}{_format_tokens(total_input)}{RESET}{BG_BAR}  "
+        f"{FG_GREEN}↓out: {BOLD}{_format_tokens(total_output)}{RESET}{BG_BAR}  "
+        f"{FG_DIM}Σ {FG_WHITE}{_format_tokens(total)}{RESET}{BG_BAR}"
+        f" {FG_DIM}│{RESET}{BG_BAR} "
+        f"{FG_CYAN}{model}{RESET}{BG_BAR}"
+        f" {FG_DIM}│{RESET}{BG_BAR} "
+        f"turns: {FG_WHITE}{turns}{RESET}{BG_BAR}"
+        f" {FG_DIM}│{RESET}{BG_BAR} "
+        f"{FG_DIM}{format_duration(duration)}{RESET}{BG_BAR}"
+        f" {RESET}"
+    )
+
+    # ── Separator ──
+    sep = f"{BG_BAR}{FG_DIM} {'─' * min(60, cols - 4)} {RESET}"
+
+    sys.stderr.write(f"{sep}\n{line1}\n{line2}\n{sep}\n")
     sys.stderr.flush()
