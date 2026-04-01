@@ -23,10 +23,74 @@ essential version.
 
 import json
 import sys
+import threading
+import time
+import random
 from openai import OpenAI
 from .tools import ALL_TOOLS, get_openai_tools, find_tool
 from .context import build_system_prompt
 from .compact import estimate_tokens, needs_compaction, compact_messages
+
+
+# ── Spinner: activity indicator while waiting for the model ──────────────────
+
+# Verbs inspired by Claude Code's getActivityDescription() in Tool.ts
+# and SpinnerMode in components/Spinner.js
+THINKING_VERBS = [
+    "Thinking",
+    "Reasoning",
+    "Analyzing",
+    "Considering",
+    "Planning",
+    "Reflecting",
+    "Evaluating",
+    "Synthesizing",
+]
+
+TOOL_VERBS = {
+    "Bash":  ["Running command", "Executing", "Running"],
+    "Read":  ["Reading", "Examining", "Inspecting"],
+    "Edit":  ["Editing", "Modifying", "Updating"],
+    "Write": ["Writing", "Creating", "Generating"],
+    "Grep":  ["Searching", "Scanning", "Looking for"],
+    "Glob":  ["Finding files", "Discovering", "Locating"],
+}
+
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+class Spinner:
+    """Animated spinner with activity verb, shown while waiting for the model."""
+
+    def __init__(self, message: str = "Thinking"):
+        self._message = message
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self):
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
+        # Clear the spinner line
+        sys.stderr.write("\r\033[K")
+        sys.stderr.flush()
+
+    def update(self, message: str):
+        self._message = message
+
+    def _spin(self):
+        i = 0
+        while not self._stop.is_set():
+            frame = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
+            sys.stderr.write(f"\r\033[K  {frame} {self._message}...")
+            sys.stderr.flush()
+            i += 1
+            self._stop.wait(0.08)
 
 
 def agent_loop(
@@ -68,6 +132,11 @@ def agent_loop(
                 _log(f"[compact] Reduced to {estimate_tokens(messages)} tokens")
 
         # ── Call the model ──
+        spinner = None
+        if verbose:
+            verb = random.choice(THINKING_VERBS)
+            spinner = Spinner(verb)
+            spinner.start()
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -76,9 +145,13 @@ def agent_loop(
                 tool_choice="auto",
             )
         except Exception as e:
+            if spinner:
+                spinner.stop()
             _log(f"[error] API call failed: {e}")
             # Retry once after a pause
-            import time
+            if verbose:
+                spinner = Spinner("Retrying")
+                spinner.start()
             time.sleep(2)
             try:
                 response = client.chat.completions.create(
@@ -88,8 +161,13 @@ def agent_loop(
                     tool_choice="auto",
                 )
             except Exception as e2:
+                if spinner:
+                    spinner.stop()
                 _log(f"[error] Retry failed: {e2}")
                 break
+        finally:
+            if spinner:
+                spinner.stop()
 
         choice = response.choices[0]
         msg = choice.message
@@ -129,13 +207,22 @@ def agent_loop(
                     _log(f"  {fn_name}() → unknown tool")
                 continue
 
-            # Print what we're doing
+            # Print what we're doing, with an activity spinner
             if verbose:
                 summary = _summarize_tool_call(fn_name, fn_args)
                 _log(f"  → {summary}")
 
+            tool_spinner = None
+            if verbose:
+                verb = random.choice(TOOL_VERBS.get(fn_name, ["Running"]))
+                tool_spinner = Spinner(f"{verb}")
+                tool_spinner.start()
+
             # Execute (errors are returned as strings, not raised — this is key!)
             result = tool.execute(fn_args)
+
+            if tool_spinner:
+                tool_spinner.stop()
 
             if verbose:
                 preview = result[:120].replace("\n", "\\n")
