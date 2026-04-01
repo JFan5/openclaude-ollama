@@ -184,17 +184,56 @@ MyTool = ToolDef(
 ALL_TOOLS.append(MyTool)
 ```
 
-## Roadmap
+## Feature Status
 
-Things from Claude Code that would be valuable to add:
+### Implemented
 
-- [ ] **Streaming responses** — show model output token-by-token
-- [ ] **Concurrent tool execution** — run read-only tools in parallel
-- [ ] **Sub-agents** — spawn child agents for subtask decomposition
-- [ ] **Permission system** — ask user before destructive operations
-- [ ] **Session persistence** — save/resume conversations
-- [ ] **TUI with Textual/Rich** — terminal UI like Claude Code's Ink-based UI
-- [ ] **MCP support** — connect external tool servers via Model Context Protocol
+| Feature | Claude Code Source | Our Implementation | Description |
+|---------|-------------------|-------------------|-------------|
+| Agent loop | `query.ts` | `src/agent.py` | Multi-turn observe → act → correct loop |
+| Bash tool | `tools/BashTool/` | `src/tools.py` | Execute shell commands with timeout and safety checks |
+| File Read | `tools/FileReadTool/` | `src/tools.py` | Read files with line numbers, offset, and limit |
+| File Edit | `tools/FileEditTool/` | `src/tools.py` | Exact string replacement with diff output |
+| File Write | `tools/FileWriteTool/` | `src/tools.py` | Create or overwrite files |
+| Grep search | `tools/GrepTool/` | `src/tools.py` | Regex search across files |
+| Glob search | `tools/GlobTool/` | `src/tools.py` | Find files by glob pattern |
+| Dynamic system prompt | `context.ts` | `src/context.py` | Inject OS, cwd, git status, project memory at runtime |
+| Project memory | `utils/claudemd.ts` | `src/context.py` | Load `AGENT.md` / `CLAUDE.md` into system prompt |
+| Auto-compact | `services/compact/` | `src/compact.py` | Summarize old messages when context window is near limit |
+| Output budgeting | `Tool.ts:maxResultSizeChars` | `src/tools.py` | Truncate large tool outputs to prevent context blowout |
+| Error recovery | `toolExecution.ts` | `src/agent.py` | Return errors as strings, let model self-correct |
+| Tool read-only flag | `Tool.ts:isConcurrencySafe` | `src/tools.py` | Tools declare whether they are read-only |
+| Max turns guard | `QueryEngine.ts:maxTurns` | `src/agent.py` | Prevent infinite loops (default: 30) |
+| One-shot mode | `entrypoints/cli.tsx` | `src/__main__.py` | Run a single prompt from command line |
+| Interactive REPL | `replLauncher.tsx` | `src/__main__.py` | Interactive prompt with readline support |
+| Multi-provider support | `services/api/client.ts` | `src/__main__.py` | Ollama, vLLM, OpenAI, DeepSeek, Together AI, etc. |
+| Dangerous command filter | `bashPermissions.ts` | `src/tools.py` | Block obviously destructive shell commands |
+| API retry | `services/api/withRetry.ts` | `src/agent.py` | Retry once on API failure |
+
+### Not Yet Implemented
+
+| Feature | Claude Code Source | Priority | Description |
+|---------|-------------------|----------|-------------|
+| Streaming responses | `services/api/claude.ts` | High | Show model output token-by-token |
+| Concurrent tool execution | `toolOrchestration.ts` | High | Run read-only tools in parallel |
+| Permission system | `useCanUseTool.tsx` | High | Ask user before destructive operations |
+| Session persistence | `utils/sessionStorage.ts` | Medium | Save/resume conversations across sessions |
+| Sub-agents | `tools/AgentTool/` | Medium | Spawn child agents for subtask decomposition |
+| Notebook support | `tools/NotebookEditTool/` | Medium | Edit Jupyter notebooks |
+| Web fetch | `tools/WebFetchTool/` | Medium | Fetch URLs and extract content |
+| Web search | `tools/WebSearchTool/` | Medium | Search the web for information |
+| LSP integration | `services/lsp/` | Medium | Language Server Protocol for code intelligence |
+| Task system | `Task.ts`, `tasks/` | Medium | Background tasks with status tracking |
+| TUI with Rich/Textual | `ink/`, `components/` | Low | Terminal UI with spinners, diffs, panels |
+| MCP support | `services/mcp/` | Low | Connect external tool servers via Model Context Protocol |
+| Hook system | `hooks/`, `utils/hooks.ts` | Low | Pre/post tool execution middleware |
+| Vim mode | `vim/` | Low | Vim keybindings for input |
+| Voice input | `voice/` | Low | Push-to-talk voice mode |
+| Auto-memory extraction | `services/extractMemories/` | Low | Auto-save learnings to project memory |
+| Coordinator mode | `coordinator/` | Low | Multi-agent orchestration with coordinator + workers |
+| Skill system | `skills/` | Low | Reusable prompt templates (slash commands) |
+| Cost tracking | `cost-tracker.ts` | Low | Track token usage and API costs |
+| Git attribution | `utils/commitAttribution.ts` | Low | Add AI co-author to git commits |
 
 PRs welcome for any of the above.
 
