@@ -30,6 +30,24 @@ from openai import OpenAI
 from .tools import ALL_TOOLS, get_openai_tools, find_tool
 from .context import build_system_prompt
 from .compact import estimate_tokens, needs_compaction, compact_messages
+from .statusbar import print_status_bar
+
+
+# ── Session stats tracking ────────────────────────────────────────────────────
+
+class SessionStats:
+    """Mutable stats accumulated across the agent loop."""
+    def __init__(self, model: str, context_window: int):
+        self.model = model
+        self.context_window = context_window
+        self.turns = 0
+        self.api_calls = 0
+        self.compact_count = 0
+        self.start_time = time.time()
+
+    @property
+    def elapsed(self) -> float:
+        return time.time() - self.start_time
 
 
 # ── Spinner: activity indicator while waiting for the model ──────────────────
@@ -121,13 +139,17 @@ def agent_loop(
         {"role": "user", "content": user_message},
     ]
     tools = get_openai_tools()
+    stats = SessionStats(model, context_window)
 
     for turn in range(1, max_turns + 1):
+        stats.turns = turn
+
         # ── Context management (from Claude Code's auto-compact) ──
         if needs_compaction(messages, context_window):
             if verbose:
                 _log(f"[compact] Context too large ({estimate_tokens(messages)} tokens), summarizing...")
             messages = compact_messages(client, model, messages, context_window)
+            stats.compact_count += 1
             if verbose:
                 _log(f"[compact] Reduced to {estimate_tokens(messages)} tokens")
 
@@ -144,6 +166,7 @@ def agent_loop(
                 tools=tools,
                 tool_choice="auto",
             )
+            stats.api_calls += 1
         except Exception as e:
             if spinner:
                 spinner.stop()
@@ -160,6 +183,7 @@ def agent_loop(
                     tools=tools,
                     tool_choice="auto",
                 )
+                stats.api_calls += 1
             except Exception as e2:
                 if spinner:
                     spinner.stop()
@@ -180,7 +204,15 @@ def agent_loop(
             if msg.content:
                 print(msg.content)
             if verbose:
-                _log(f"[done] {turn} turn(s), {estimate_tokens(messages)} tokens")
+                print_status_bar(
+                    model=model,
+                    tokens_used=estimate_tokens(messages),
+                    context_window=context_window,
+                    turns=stats.turns,
+                    api_calls=stats.api_calls,
+                    duration=stats.elapsed,
+                    compact_count=stats.compact_count,
+                )
             return messages
 
         # ── Execute tool calls ──
@@ -235,6 +267,16 @@ def agent_loop(
             })
 
     _log(f"[warn] Reached max turns ({max_turns})")
+    if verbose:
+        print_status_bar(
+            model=model,
+            tokens_used=estimate_tokens(messages),
+            context_window=context_window,
+            turns=stats.turns,
+            api_calls=stats.api_calls,
+            duration=stats.elapsed,
+            compact_count=stats.compact_count,
+        )
     return messages
 
 
