@@ -5,6 +5,7 @@ CLI entry point — run with `python -m src` or `python -m src "your prompt"`.
 import os
 import sys
 import argparse
+import readline  # enables backspace, arrow keys, and history in input()
 from openai import OpenAI
 from .agent import agent_loop
 
