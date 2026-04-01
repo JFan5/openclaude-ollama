@@ -8,6 +8,8 @@
 
 **语言**: [English](README.md) | **中文**
 
+![OpenClaude Demo](docs/images/demo.png)
+
 ---
 
 ## 为什么智能体比单次调用更强

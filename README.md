@@ -8,6 +8,8 @@ This project extracts the core architectural patterns from [Claude Code](https:/
 
 > **This is not a fork of Claude Code.** It is a clean-room implementation inspired by studying Claude Code's [decompiled source](https://github.com/anthropics/claude-code) (v2.1.88). The goal is education: understand *why* agentic systems work better than raw LLM calls, and build your own.
 
+![OpenClaude Demo](docs/images/demo.png)
+
 ## Why agents beat single LLM calls
 
 A single LLM call is like asking someone to write code with their eyes closed. An agent loop lets the model **observe → act → observe → correct**:
